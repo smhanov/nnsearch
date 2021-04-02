@@ -1,6 +1,7 @@
 package nnsearch
 
 import (
+	"bufio"
 	"container/heap"
 	"encoding/binary"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"log"
 	"math/bits"
 	"math/rand"
+	"os"
 	"runtime"
 	"sort"
 	"sync"
@@ -49,7 +51,7 @@ func (h *edgeHeap) Pop() interface{} {
 	return x
 }
 
-func NewGraphIndex(space MetricSpace) SpaceIndex {
+func NewGraphIndex(space MetricSpace) *graph {
 	g := &graph{
 		checked: make(map[pair]bool),
 		space:   space,
@@ -425,7 +427,19 @@ func (g *graph) Write(w io.Writer) (int64, error) {
 	return 0, nil
 }
 
-func OpenGraphIndex(r io.Reader, space MetricSpace) SpaceIndex {
+func (g *graph) Save(filename string) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer file.Close()
+
+	bw := bufio.NewWriter(file)
+	defer bw.Flush()
+	g.Write(bw)
+}
+
+func ReadGraphIndex(r io.Reader, space MetricSpace) SpaceIndex {
 
 	// read # neighbours
 	var k uint64
@@ -450,4 +464,15 @@ func OpenGraphIndex(r io.Reader, space MetricSpace) SpaceIndex {
 		space: space,
 		heaps: heaps,
 	}
+}
+
+func LoadGraphIndex(filename string, space MetricSpace) SpaceIndex {
+	file, err := os.Open(filename)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer file.Close()
+
+	br := bufio.NewReader(file)
+	return ReadGraphIndex(br, space)
 }

@@ -59,6 +59,7 @@ func (bf *bruteForceIndex) Write(w io.Writer) (int64, error) {
 
 func (bf *bruteForceIndex) NearestNeighbours(target Point, k int) []PointDistance {
 	results := make(pointHeap, 0, k)
+	counter := NewCounter(100)
 
 	for i := 0; i < bf.space.Length(); i++ {
 		pt := bf.space.At(i)
@@ -73,6 +74,7 @@ func (bf *bruteForceIndex) NearestNeighbours(target Point, k int) []PointDistanc
 				Distance: dist,
 			})
 		}
+		counter.Count()
 	}
 
 	sort.Slice(results, func(a, b int) bool {

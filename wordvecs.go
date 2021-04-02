@@ -105,18 +105,19 @@ func (wv *WordVecs) Get(word string) []float32 {
 	return result
 }
 
-// Distance ...
-func (wv *WordVecs) Distance(word1 Point, word2 Point) float64 {
-	vec1 := word1.(*WordVector).Vector
-	vec2 := word2.(*WordVector).Vector
-
-	var len1, len2, dot float64
-	for i := 0; i < wv.d; i++ {
-		len1 += float64(vec1[i] * vec1[i])
-		len2 += float64(vec2[i] * vec2[i])
-		dot += float64(vec1[i] * vec2[i])
+func CosineDistance(vec1 []float32, vec2 []float32) float64 {
+	var sum float64
+	for i := range vec1 {
+		sum += float64((vec1[i] - vec2[i]) * (vec1[i] - vec2[i]))
 	}
-	return math.Acos(dot/(math.Sqrt(len1)*math.Sqrt(len2))) / math.Pi
+	return math.Sqrt(sum)
+}
+
+// Distance ...
+func (wv *WordVecs) Distance(word1 string, word2 string) float64 {
+	vec1 := wv.Get(word1)
+	vec2 := wv.Get(word2)
+	return CosineDistance(vec1, vec2)
 }
 
 func (wv *WordVecs) Length() int {
@@ -130,7 +131,7 @@ func (wv *WordVecs) At(i int) Point {
 	}
 }
 
-func (wv *WordVecs) PointFromQuery(text string) Point {
+func (wv *WordVecs) PointFromQuery(text string) *WordVector {
 	total := make([]float32, wv.d)
 	for _, word := range tokenize(text) {
 		vec := wv.Get(word)
