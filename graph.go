@@ -147,6 +147,9 @@ func (g *graph) connect(a, b, k int) int {
 
 	if c != 0 {
 		g.lock.Lock()
+		if len(g.checked) >= 1000000 {
+			g.checked = make(map[pair]bool)
+		}
 		g.checked[pair{a, b}] = true
 		g.lock.Unlock()
 	}
