@@ -3,11 +3,9 @@ package nnsearch
 import (
 	"bufio"
 	"container/heap"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
-	"math/bits"
 	"math/rand"
 	"os"
 	"runtime"
@@ -313,10 +311,69 @@ func (g *graph) GetNode(index int) Point {
 	return g.space.At(index)
 }
 
+func (g *graph) NearestNeighbours(target Point, k int) []PointDistance {
+	return NearestNeighbours(g, target, k)
+}
+
+func (g *graph) Space() MetricSpace {
+	return g.space
+}
+
+type frozenGraph struct {
+	ff    *FrozenFile
+	space MetricSpace
+}
+
+func (g *frozenGraph) Space() MetricSpace {
+	return g.space
+}
+
+func (g *frozenGraph) GetNodeCount() int {
+	return int(g.ff.GetCount())
+}
+
+func (g *frozenGraph) GetNeighbours(index int) []edge {
+	var n edgeHeap
+	g.ff.GetItem(index, &n)
+	return n
+}
+
+func (e *edgeHeap) Encode(w io.Writer) uint64 {
+	s := WriteThing(w, len(*e))
+	for _, edge := range *e {
+		s += WriteThing(w, edge.index)
+		s += WriteThing(w, edge.distance)
+	}
+	return s
+}
+
+func (e *edgeHeap) Decode(r ByteInputStream) {
+	var l int
+	ReadThing(r, &l)
+	*e = make(edgeHeap, l)
+	for i := 0; i < l; i++ {
+		ReadThing(r, &(*e)[i].index)
+		ReadThing(r, &(*e)[i].distance)
+	}
+}
+
+func (g *frozenGraph) NearestNeighbours(target Point, k int) []PointDistance {
+	return NearestNeighbours(g, target, k)
+}
+
+func (g *frozenGraph) GetNode(index int) Point {
+	return g.space.At(index)
+}
+
+func (g *frozenGraph) Write(w io.Writer) (int64, error) {
+	return 0, fmt.Errorf("cannot write frozen graph")
+}
+
 type IGraph interface {
+	Space() MetricSpace
 	GetNodeCount() int
 	GetNeighbours(index int) []edge
-	GetNode(index int) string
+	GetNode(index int) Point
 }
 
 func randomSample(n, k int) []int {
@@ -333,24 +390,25 @@ func randomSample(n, k int) []int {
 	return results
 }
 
-func (g *graph) NearestNeighbours(target Point, k int) []PointDistance {
+func NearestNeighbours(g IGraph, target Point, k int) []PointDistance {
 	// maintain a heap of the nearest neighbours and a queue of nodes to check.
 	var bestSoFar pointHeap
 	var worklist []int
 	have := make(map[int]bool)
+	space := g.Space()
 
 	// things only go onto the heap if they are less distance than the worst
 	// when things go onto the heap, they also are added to the queue.
 
 	// find about 100 random neighbours and add to heap (and queue)
-	worklist = randomSample(g.space.Length(), 100)
+	worklist = randomSample(g.GetNodeCount(), 100)
 	for _, index := range worklist {
-		pt := g.space.At(index)
+		pt := space.At(index)
 		have[index] = true
 		heap.Push(&bestSoFar, PointDistance{
 			Index:    index,
 			Point:    pt,
-			Distance: g.space.Distance(pt, target),
+			Distance: space.Distance(pt, target),
 		})
 	}
 
@@ -369,13 +427,13 @@ func (g *graph) NearestNeighbours(target Point, k int) []PointDistance {
 			have[edge.index] = true
 
 			// if neighbour needs to go onto the heap, then add it
-			d := g.space.Distance(target, g.space.At(edge.index))
+			d := space.Distance(target, space.At(edge.index))
 			if d < bestSoFar[0].Distance {
 				heap.Pop(&bestSoFar)
 				heap.Push(&bestSoFar, PointDistance{
 					Distance: d,
 					Index:    edge.index,
-					Point:    g.space.At(edge.index),
+					Point:    space.At(edge.index),
 				})
 				worklist = append(worklist, edge.index)
 			}
@@ -387,7 +445,7 @@ func (g *graph) NearestNeighbours(target Point, k int) []PointDistance {
 	})
 
 	log.Printf("Searched %v%% of graph",
-		float64(len(have))/float64(g.space.Length()))
+		float64(len(have))/float64(g.GetNodeCount()))
 	return bestSoFar[:k]
 }
 
@@ -411,23 +469,12 @@ func readNumber(r io.Reader, num *uint64, bits int) {
 }
 
 func (g *graph) Write(w io.Writer) (int64, error) {
-	// write #neighbours
-	binary.Write(w, binary.LittleEndian, uint64(len(g.heaps[0])))
-
-	// calc # bits required for node indicies
-	b := bits.Len(uint(g.space.Length()))
-
-	// for each node,
-	for i := 0; i < len(g.heaps); i++ {
-		// write out its neighbours and distances.
-		for _, edge := range g.heaps[i] {
-			writeNumber(w, uint64(edge.index), b)
-			binary.Write(w, binary.LittleEndian, edge.distance)
-		}
+	items := make([]FrozenItem, len(g.heaps))
+	for i := range g.heaps {
+		items[i] = &g.heaps[i]
 	}
-
-	// size is 4 + #nodes*#bits + #nodes*float64
-	return 0, nil
+	n := FreezeItems(w, items)
+	return int64(n), nil
 }
 
 func (g *graph) Save(filename string) {
@@ -442,40 +489,9 @@ func (g *graph) Save(filename string) {
 	g.Write(bw)
 }
 
-func ReadGraphIndex(r io.Reader, space MetricSpace) SpaceIndex {
-
-	// read # neighbours
-	var k uint64
-	binary.Read(r, binary.LittleEndian, &k)
-
-	heaps := make([]edgeHeap, space.Length())
-
-	// calc # bits required for node indicies
-	b := bits.Len(uint(space.Length()))
-
-	for i := 0; i < space.Length(); i++ {
-		heaps[i] = make(edgeHeap, k)
-		for j := uint64(0); j < k; j++ {
-			var num uint64
-			readNumber(r, &num, b)
-			heaps[i][j].index = int(num)
-			binary.Read(r, binary.LittleEndian, &heaps[i][j].distance)
-		}
-	}
-
-	return &graph{
-		space: space,
-		heaps: heaps,
-	}
-}
-
 func LoadGraphIndex(filename string, space MetricSpace) SpaceIndex {
-	file, err := os.Open(filename)
-	if err != nil {
-		log.Panic(err)
+	return &frozenGraph{
+		ff:    OpenFrozenFile(filename),
+		space: space,
 	}
-	defer file.Close()
-
-	br := bufio.NewReader(file)
-	return ReadGraphIndex(br, space)
 }

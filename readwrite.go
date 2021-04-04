@@ -39,12 +39,16 @@ func WriteThing(w io.Writer, thing interface{}) uint64 {
 		return writeString(w, v)
 	case float32:
 		return writeFloat32(w, v)
+	case float64:
+		return writeFloat64(w, v)
 	case []float32:
 		return writeFloat32Slice(w, v)
 	case *[]float32:
 		return writeFloat32Slice(w, *v)
 	case int64:
 		return writeInt64(w, v)
+	case int:
+		return writeInt64(w, int64(v))
 	}
 
 	log.Panicf("Don't know how to write this type: %v", reflect.TypeOf(thing))
@@ -59,10 +63,17 @@ func ReadThing(bs ByteInputStream, thing interface{}) uint64 {
 		return readString(bs, v)
 	case *float32:
 		return readFloat32(bs, v)
+	case *float64:
+		return readFloat64(bs, v)
 	case *[]float32:
 		return readFloat32Slice(bs, v)
 	case *int64:
 		return readInt64(bs, v)
+	case *int:
+		var v2 int64
+		l := readInt64(bs, &v2)
+		*v = int(v2)
+		return l
 	default:
 		log.Panicf("Don't know how to read this type: %v", reflect.TypeOf(thing))
 		return 0
@@ -117,12 +128,83 @@ func writeUint64(w io.Writer, n uint64) uint64 {
 			})
 		}
 		return 5
+	} else if n < 0x3ffffffffff {
+		if w != nil {
 
-	} else {
-		// could go further
-		log.Panicf("Not implemented: %08x", n)
+			w.Write([]byte{
+				byte((n>>35)&0x7f | 0x80),
+				byte((n>>28)&0x7f | 0x80),
+				byte((n>>21)&0x7f | 0x80),
+				byte((n>>14)&0x7f | 0x80),
+				byte((n>>7)&0x7f | 0x80),
+				byte(n & 0x7f),
+			})
+		}
+		return 6
+
+	} else if n < 0x1ffffffffffff {
+		if w != nil {
+
+			w.Write([]byte{
+				byte((n>>42)&0x7f | 0x80),
+				byte((n>>35)&0x7f | 0x80),
+				byte((n>>28)&0x7f | 0x80),
+				byte((n>>21)&0x7f | 0x80),
+				byte((n>>14)&0x7f | 0x80),
+				byte((n>>7)&0x7f | 0x80),
+				byte(n & 0x7f),
+			})
+		}
+		return 7
+	} else if n < (1<<56)-1 {
+		if w != nil {
+
+			w.Write([]byte{
+				byte((n>>49)&0x7f | 0x80),
+				byte((n>>42)&0x7f | 0x80),
+				byte((n>>35)&0x7f | 0x80),
+				byte((n>>28)&0x7f | 0x80),
+				byte((n>>21)&0x7f | 0x80),
+				byte((n>>14)&0x7f | 0x80),
+				byte((n>>7)&0x7f | 0x80),
+				byte(n & 0x7f),
+			})
+		}
+		return 8
+	} else if n < (1<<63)-1 {
+		if w != nil {
+
+			w.Write([]byte{
+				byte((n>>56)&0x7f | 0x80),
+				byte((n>>49)&0x7f | 0x80),
+				byte((n>>42)&0x7f | 0x80),
+				byte((n>>35)&0x7f | 0x80),
+				byte((n>>28)&0x7f | 0x80),
+				byte((n>>21)&0x7f | 0x80),
+				byte((n>>14)&0x7f | 0x80),
+				byte((n>>7)&0x7f | 0x80),
+				byte(n & 0x7f),
+			})
+		}
+		return 9
+
 	}
-	return 0
+	if w != nil {
+		w.Write([]byte{
+			byte((n>>63)&0x7f | 0x80),
+			byte((n>>56)&0x7f | 0x80),
+			byte((n>>49)&0x7f | 0x80),
+			byte((n>>42)&0x7f | 0x80),
+			byte((n>>35)&0x7f | 0x80),
+			byte((n>>28)&0x7f | 0x80),
+			byte((n>>21)&0x7f | 0x80),
+			byte((n>>14)&0x7f | 0x80),
+			byte((n>>7)&0x7f | 0x80),
+			byte(n & 0x7f),
+		})
+	}
+	return 10
+
 }
 
 func readUint64(bs ByteInputStream, v *uint64) uint64 {
@@ -168,6 +250,18 @@ func readFloat32(bs ByteInputStream, v *float32) uint64 {
 	var u uint64
 	l := readUint64(bs, &u)
 	*v = math.Float32frombits(bits.ReverseBytes32(uint32(u)))
+	return l
+}
+
+func writeFloat64(w io.Writer, v float64) uint64 {
+	u := bits.ReverseBytes64(math.Float64bits(v))
+	return writeUint64(w, uint64(u))
+}
+
+func readFloat64(bs ByteInputStream, v *float64) uint64 {
+	var u uint64
+	l := readUint64(bs, &u)
+	*v = math.Float64frombits(bits.ReverseBytes64(uint64(u)))
 	return l
 }
 
