@@ -121,14 +121,37 @@ func CosineDistance(vec1 []float32, vec2 []float32) float64 {
 		len2 += float64(vec2[i] * vec2[i])
 		dot += float64(vec1[i] * vec2[i])
 	}
-	return math.Acos(dot/(math.Sqrt(len1)*math.Sqrt(len2))) / math.Pi
+
+	numer := dot / (math.Sqrt(len1) * math.Sqrt(len2))
+	if numer > 1.0 {
+		numer = 1.0
+	} else if numer < -1.0 {
+		numer = -1.0
+	}
+	return math.Acos(numer) / math.Pi
 }
 
 // Distance ...
-func (wv *WordVecs) Distance(word1 string, word2 string) float64 {
+func (wv *WordVecs) WordDistance(word1 string, word2 string) float64 {
 	vec1 := wv.Get(word1)
+	if vec1 == nil {
+		return math.Inf(1)
+	}
 	vec2 := wv.Get(word2)
+	if vec2 == nil {
+		return math.Inf(1)
+	}
 	return CosineDistance(vec1, vec2)
+}
+
+func (wv *WordVecs) Distance(p1, p2 Point) float64 {
+	word1 := p1.(*WordVector)
+	word2 := p2.(*WordVector)
+
+	if word1.Word == word2.Word {
+		return 0
+	}
+	return CosineDistance(word1.Vector, word2.Vector)
 }
 
 func (wv *WordVecs) Length() int {
@@ -144,7 +167,7 @@ func (wv *WordVecs) At(i int) Point {
 
 func (wv *WordVecs) PointFromQuery(text string) *WordVector {
 	total := make([]float32, wv.d)
-	for _, word := range tokenize(text) {
+	for _, word := range RemoveDuplicateStrings(Tokenize(text)) {
 		vec := wv.Get(word)
 		for i := range vec {
 			total[i] += vec[i]
@@ -157,7 +180,22 @@ func (wv *WordVecs) PointFromQuery(text string) *WordVector {
 	}
 }
 
-func tokenize(text string) []string {
+func Tokenize(text string) []string {
 	text = strings.ToLower(text)
 	return strings.Split(text, " ")
+}
+
+func RemoveDuplicateStrings(input []string) []string {
+	have := make(map[string]bool)
+	var j int
+	for i, str := range input {
+		if i != j {
+			input[j] = str
+		}
+		if !have[str] {
+			have[str] = true
+			j++
+		}
+	}
+	return input[:j]
 }

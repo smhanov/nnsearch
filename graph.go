@@ -77,7 +77,7 @@ func (g *graph) randomize(k int) {
 	g.locks = make([]sync.Mutex, n)
 
 	c := NewCounter(1000)
-	fork(n, func(u int) {
+	ForkLoop(n, func(u int) {
 		c.Count()
 		var v int
 		for x := 0; x < k; x++ {
@@ -173,7 +173,7 @@ func (g *graph) descentStep(k int, maxSample int, iter int) int {
 	// for each node,
 	c := 0
 	counter := NewCounter(100)
-	fork(n, func(u int) {
+	ForkLoop(n, func(u int) {
 		counter.Count()
 
 		// find lists of old neighbours, new neighbours
@@ -230,7 +230,7 @@ func (g *graph) descentStep(k int, maxSample int, iter int) int {
 	return c
 }
 
-func fork(n int, fn func(i int)) {
+func ForkLoop(n int, fn func(i int)) {
 	threads := runtime.NumCPU()
 	var wg sync.WaitGroup
 

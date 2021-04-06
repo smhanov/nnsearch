@@ -3,7 +3,9 @@ package nnsearch
 import (
 	"container/heap"
 	"io"
+	"math/rand"
 	"sort"
+	"sync"
 )
 
 type Point interface {
@@ -60,10 +62,12 @@ func (bf *bruteForceIndex) Write(w io.Writer) (int64, error) {
 func (bf *bruteForceIndex) NearestNeighbours(target Point, k int) []PointDistance {
 	results := make(pointHeap, 0, k)
 	counter := NewCounter(100)
+	var mutex sync.Mutex
 
-	for i := 0; i < bf.space.Length(); i++ {
+	ForkLoop(bf.space.Length(), func(i int) {
 		pt := bf.space.At(i)
-		dist := bf.space.Distance(pt, target)
+		dist := bf.space.Distance(target, pt)
+		mutex.Lock()
 		if len(results) < k || results[0].Distance > dist {
 			if len(results) == k {
 				heap.Pop(&results)
@@ -75,11 +79,28 @@ func (bf *bruteForceIndex) NearestNeighbours(target Point, k int) []PointDistanc
 			})
 		}
 		counter.Count()
-	}
+		mutex.Unlock()
+	})
 
 	sort.Slice(results, func(a, b int) bool {
 		return results[a].Distance < results[b].Distance
 	})
 
 	return results
+}
+
+func ComputeAverageDistance(space MetricSpace, samples int) float64 {
+	// find cutoff
+	sum := float64(0)
+	n := 0
+	for i := 0; i < 1000; i++ {
+		n1 := rand.Intn(space.Length())
+		n2 := rand.Intn(space.Length())
+		if n1 != n2 {
+			n++
+			sum += space.Distance(space.At(n1), space.At(n2))
+		}
+	}
+
+	return sum / float64(n)
 }
