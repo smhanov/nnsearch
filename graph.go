@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"runtime"
@@ -36,12 +37,26 @@ type edgeHeap []edge
 func (h edgeHeap) Len() int           { return len(h) }
 func (h edgeHeap) Less(i, j int) bool { return h[i].distance > h[j].distance }
 func (h edgeHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-
 func (h *edgeHeap) Push(x interface{}) {
 	*h = append(*h, x.(edge))
 }
-
 func (h *edgeHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
+}
+
+type minEdgeHeap []edge
+
+func (h minEdgeHeap) Len() int           { return len(h) }
+func (h minEdgeHeap) Less(i, j int) bool { return h[i].distance < h[j].distance }
+func (h minEdgeHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *minEdgeHeap) Push(x interface{}) {
+	*h = append(*h, x.(edge))
+}
+func (h *minEdgeHeap) Pop() interface{} {
 	old := *h
 	n := len(old)
 	x := old[n-1]
@@ -54,6 +69,10 @@ func NewGraphIndex(space MetricSpace) *graph {
 		checked: make(map[pair]bool),
 		space:   space,
 	}
+
+	n := g.space.Length()
+	g.heaps = make([]edgeHeap, n)
+	g.locks = make([]sync.Mutex, n)
 
 	g.gradientDescentKnn(50)
 	return g
@@ -72,12 +91,9 @@ func (g *graph) dump(k int) {
 }
 
 func (g *graph) randomize(k int) {
-	n := g.space.Length()
-	g.heaps = make([]edgeHeap, n)
-	g.locks = make([]sync.Mutex, n)
-
 	c := NewCounter(1000)
-	ForkLoop(n, func(u int) {
+	n := g.space.Length()
+	ForkLoop(g.space.Length(), func(u int) {
 		c.Count()
 		var v int
 		for x := 0; x < k; x++ {
@@ -90,6 +106,51 @@ func (g *graph) randomize(k int) {
 			g.connect(v, u, k)
 		}
 	})
+}
+
+func (g *graph) initializeUsingPivots(pivots []Pivot, k int) {
+	n := g.space.Length()
+	if n < 1 {
+		return
+	}
+
+	if k > n-1 {
+		k = n - 1
+	}
+
+	hashes := make([][]int, n)
+	for u := 0; u < n; u++ {
+		hashes[u] = PivotHash(pivots, u)
+	}
+
+	order := Sequence(n)
+	sort.Slice(order, func(a, b int) bool {
+		return PivotHashLessThan(hashes[a], hashes[b])
+	})
+
+	c := NewCounter(100)
+	ShuffledForkLoop(n, func(i int) {
+		c.Count()
+		u := order[i]
+		start := i - k/2
+		if start < 0 {
+			start = 0
+		}
+
+		end := start + k + 1
+		if end > n {
+			end = n
+		}
+
+		for j := start; j < end; j++ {
+			if i != j {
+				v := order[j]
+				g.connect(u, v, k)
+			}
+		}
+	})
+
+	g.randomize(k)
 }
 
 /*
@@ -230,28 +291,17 @@ func (g *graph) descentStep(k int, maxSample int, iter int) int {
 	return c
 }
 
-func ForkLoop(n int, fn func(i int)) {
-	threads := runtime.NumCPU()
-	var wg sync.WaitGroup
-
-	worker := func(offset int) {
-		for i := offset; i < n; i += threads {
-			fn(i)
-		}
-		wg.Done()
-	}
-
-	for i := 0; i < threads; i++ {
-		wg.Add(1)
-		go worker(i)
-	}
-
-	wg.Wait()
-}
-
 func (g *graph) gradientDescentKnn(kIn int) {
-	log.Printf("Initialize randomly")
+	n := g.space.Length()
+	np := int(math.Max(math.Log2(float64(n)), 3))
+	log.Printf("Choosing %d pivots", np)
+	pivots := ChoosePivots(g.space, np)
+
 	k := 50
+	log.Printf("Initialize using pivots")
+	g.initializeUsingPivots(pivots, k)
+
+	log.Printf("Adding randomness")
 	g.randomize(k)
 
 	//for {
@@ -265,6 +315,8 @@ func (g *graph) gradientDescentKnn(kIn int) {
 		}
 		log.Printf("%v changes made", c)
 	}
+
+	g.makeUndirected(k * 2)
 
 	/*
 		// optional post stage to find other connections missed.
@@ -317,6 +369,64 @@ func (g *graph) NearestNeighbours(target Point, k int) []PointDistance {
 
 func (g *graph) Space() MetricSpace {
 	return g.space
+}
+
+/*
+func pushk(h heap.Interface, x interface{}, k int) {
+	if h.Len() < k {
+		heap.Push(h, x)
+		return
+	}
+
+	h.Push(x)
+	less := h.Less(h.Len()-1, 0)
+	h.Pop()
+	if less {
+		heap.Pop(h)
+		heap.Push(h, x)
+	}
+}
+*/
+
+func (g *graph) makeUndirected(k int) {
+	have := make(map[pair]bool)
+	// check what edges we have already
+	n := g.space.Length()
+	redges := make([]edgeHeap, n)
+
+	// create heaps to contain the reverse edges
+	for u := 0; u < n; u++ {
+		for _, edge := range g.heaps[u] {
+			have[pair{u, edge.index}] = true
+		}
+	}
+
+	// add all reverse edges to nodes' neighbour list, up to the limit of k.
+	for u := 0; u < n; u++ {
+		for _, e := range g.heaps[u] {
+			if !have[pair{e.index, u}] {
+				have[pair{e.index, u}] = true
+			}
+			l := len(redges[e.index])
+			if l < k || e.distance < redges[e.index][0].distance {
+				if l == k {
+					heap.Pop(&redges[e.index])
+				}
+				heap.Push(&redges[e.index], edge{u, e.distance, false})
+			}
+		}
+	}
+
+	// add all reverse edges to nodes' neighbour list, up to the limit of k.
+	for u := 0; u < n; u++ {
+		for _, e := range redges[u] {
+			heap.Push(&g.heaps[u], e)
+		}
+
+		for len(redges[u]) > k {
+			heap.Pop(&g.heaps[u])
+		}
+	}
 }
 
 type frozenGraph struct {
@@ -391,64 +501,119 @@ func randomSample(n, k int) []int {
 }
 
 func NearestNeighbours(g IGraph, target Point, k int) []PointDistance {
-	// maintain a heap of the nearest neighbours and a queue of nodes to check.
-	var bestSoFar pointHeap
-	var worklist []int
-	have := make(map[int]bool)
 	space := g.Space()
+	if false {
+		// maintain a heap of the nearest neighbours and a queue of nodes to check.
+		var bestSoFar pointHeap
+		var worklist []int
+		have := make(map[int]bool)
 
-	// things only go onto the heap if they are less distance than the worst
-	// when things go onto the heap, they also are added to the queue.
+		// things only go onto the heap if they are less distance than the worst
+		// when things go onto the heap, they also are added to the queue.
 
-	// find about 100 random neighbours and add to heap (and queue)
-	worklist = randomSample(g.GetNodeCount(), 100)
-	for _, index := range worklist {
-		pt := space.At(index)
-		have[index] = true
-		heap.Push(&bestSoFar, PointDistance{
-			Index:    index,
-			Point:    pt,
-			Distance: space.Distance(pt, target),
+		// find about 100 random neighbours and add to heap (and queue)
+		worklist = randomSample(g.GetNodeCount(), 100)
+		for _, index := range worklist {
+			pt := space.At(index)
+			have[index] = true
+			heap.Push(&bestSoFar, PointDistance{
+				Index:    index,
+				Point:    pt,
+				Distance: space.Distance(pt, target),
+			})
+		}
+
+		// while there are items in the queue,
+		for len(worklist) > 0 {
+			// take item off the queue
+			l := len(worklist)
+			index := worklist[l-1]
+			worklist = worklist[:l-1]
+
+			// check each of its neighbours.
+			for _, edge := range g.GetNeighbours(index) {
+				if have[edge.index] {
+					continue
+				}
+				have[edge.index] = true
+
+				// if neighbour needs to go onto the heap, then add it
+				d := space.Distance(target, space.At(edge.index))
+				if d < bestSoFar[0].Distance {
+					heap.Pop(&bestSoFar)
+					heap.Push(&bestSoFar, PointDistance{
+						Distance: d,
+						Index:    edge.index,
+						Point:    space.At(edge.index),
+					})
+					worklist = append(worklist, edge.index)
+				}
+			}
+		}
+		sort.Slice(bestSoFar, func(a, b int) bool {
+			return bestSoFar[a].Distance < bestSoFar[b].Distance
 		})
+
+		log.Printf("Searched %v%% of graph",
+			float64(len(have))/float64(g.GetNodeCount()))
+		return bestSoFar[:k]
 	}
 
-	// while there are items in the queue,
-	for len(worklist) > 0 {
-		// take item off the queue
-		l := len(worklist)
-		index := worklist[l-1]
-		worklist = worklist[:l-1]
+	var bestk pointHeap
+	var queue minEdgeHeap
+	epsilon := 1.1
+	checked := make(map[int]bool)
+	n := space.Length()
 
-		// check each of its neighbours.
-		for _, edge := range g.GetNeighbours(index) {
-			if have[edge.index] {
-				continue
-			}
-			have[edge.index] = true
+	consider := func(u int) {
+		if checked[u] {
+			return
+		}
 
-			// if neighbour needs to go onto the heap, then add it
-			d := space.Distance(target, space.At(edge.index))
-			if d < bestSoFar[0].Distance {
-				heap.Pop(&bestSoFar)
-				heap.Push(&bestSoFar, PointDistance{
-					Distance: d,
-					Index:    edge.index,
-					Point:    space.At(edge.index),
-				})
-				worklist = append(worklist, edge.index)
+		checked[u] = true
+		pt := space.At(u)
+		d := space.Distance(pt, target)
+		if len(bestk) < k || d < bestk[0].Distance {
+			if len(bestk) == k {
+				heap.Pop(&bestk)
 			}
+			heap.Push(&bestk, PointDistance{
+				Distance: d,
+				Index:    u,
+				Point:    pt,
+			})
+		}
+
+		if d < epsilon*bestk[0].Distance {
+			heap.Push(&queue, edge{u, d, false})
 		}
 	}
 
-	sort.Slice(bestSoFar, func(a, b int) bool {
-		return bestSoFar[a].Distance < bestSoFar[b].Distance
+	for i := 0; i < 10; i++ {
+		consider(rand.Intn(n))
+	}
+
+	for {
+		if len(queue) == 0 {
+			break
+		}
+
+		item := heap.Pop(&queue).(edge)
+		for _, e := range g.GetNeighbours(item.index) {
+			consider(e.index)
+		}
+	}
+
+	sort.Slice(bestk, func(a, b int) bool {
+		return bestk[a].Distance < bestk[b].Distance
 	})
 
 	log.Printf("Searched %v%% of graph",
-		float64(len(have))/float64(g.GetNodeCount()))
-	return bestSoFar[:k]
+		float64(len(checked))/float64(g.GetNodeCount()))
+	return bestk[:k]
 }
 
+/*
 func writeNumber(w io.Writer, num uint64, bits int) {
 	var buff []byte
 	bits = (bits + 7) / 8 * 8
@@ -456,17 +621,24 @@ func writeNumber(w io.Writer, num uint64, bits int) {
 		buff = append(buff, byte(num>>(bits-8-i)))
 	}
 
-	w.Write(buff)
+	_, err := w.Write(buff)
+	if err != nil {
+		log.Panic(err)
+	}
 }
 
 func readNumber(r io.Reader, num *uint64, bits int) {
 	data := make([]byte, (bits+7)/8)
-	r.Read(data)
+	_, err := r.Read(data)
+	if err != nil {
+		log.Panic(err)
+	}
 	*num = 0
 	for _, ch := range data {
 		*num = (*num << 8) | uint64(ch)
 	}
 }
+*/
 
 func (g *graph) Write(w io.Writer) (int64, error) {
 	items := make([]FrozenItem, len(g.heaps))
@@ -486,7 +658,10 @@ func (g *graph) Save(filename string) {
 
 	bw := bufio.NewWriter(file)
 	defer bw.Flush()
-	g.Write(bw)
+	_, err = g.Write(bw)
+	if err != nil {
+		log.Panic(err)
+	}
 }
 
 func LoadGraphIndex(filename string, space MetricSpace) SpaceIndex {

@@ -24,7 +24,10 @@ func FreezeItems(w io.Writer, items []FrozenItem) uint64 {
 	off := WriteThing(w, uint64(len(items))) + 4*uint64(len(items))
 	// write offset of items
 	for _, item := range items {
-		binary.Write(w, binary.BigEndian, uint32(off))
+		err := binary.Write(w, binary.BigEndian, uint32(off))
+		if err != nil {
+			log.Panic(err)
+		}
 		off += item.Encode(nil)
 	}
 	// write items

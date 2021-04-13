@@ -81,14 +81,15 @@ func ReadThing(bs ByteInputStream, thing interface{}) uint64 {
 }
 
 func writeUint64(w io.Writer, n uint64) uint64 {
+	//var err error
 	if n < 0x7f {
 		if w != nil {
-			w.Write([]byte{byte(n)})
+			_, _ = w.Write([]byte{byte(n)})
 		}
 		return 1
 	} else if n < 0x3fff {
 		if w != nil {
-			w.Write([]byte{
+			_, _ = w.Write([]byte{
 				byte((n>>7)&0x7f | 0x80),
 				byte(n & 0x7f),
 			})
@@ -97,7 +98,7 @@ func writeUint64(w io.Writer, n uint64) uint64 {
 	} else if n < 0x1fffff {
 		if w != nil {
 
-			w.Write([]byte{
+			_, _ = w.Write([]byte{
 				byte((n>>14)&0x7f | 0x80),
 				byte((n>>7)&0x7f | 0x80),
 				byte(n & 0x7f),
@@ -107,7 +108,7 @@ func writeUint64(w io.Writer, n uint64) uint64 {
 	} else if n < 0xfffffff {
 		if w != nil {
 
-			w.Write([]byte{
+			_, _ = w.Write([]byte{
 				byte((n>>21)&0x7f | 0x80),
 				byte((n>>14)&0x7f | 0x80),
 				byte((n>>7)&0x7f | 0x80),
@@ -119,7 +120,7 @@ func writeUint64(w io.Writer, n uint64) uint64 {
 	} else if n < 0x3ffffffff {
 		if w != nil {
 
-			w.Write([]byte{
+			_, _ = w.Write([]byte{
 				byte((n>>28)&0x7f | 0x80),
 				byte((n>>21)&0x7f | 0x80),
 				byte((n>>14)&0x7f | 0x80),
@@ -131,7 +132,7 @@ func writeUint64(w io.Writer, n uint64) uint64 {
 	} else if n < 0x3ffffffffff {
 		if w != nil {
 
-			w.Write([]byte{
+			_, _ = w.Write([]byte{
 				byte((n>>35)&0x7f | 0x80),
 				byte((n>>28)&0x7f | 0x80),
 				byte((n>>21)&0x7f | 0x80),
@@ -145,7 +146,7 @@ func writeUint64(w io.Writer, n uint64) uint64 {
 	} else if n < 0x1ffffffffffff {
 		if w != nil {
 
-			w.Write([]byte{
+			_, _ = w.Write([]byte{
 				byte((n>>42)&0x7f | 0x80),
 				byte((n>>35)&0x7f | 0x80),
 				byte((n>>28)&0x7f | 0x80),
@@ -159,7 +160,7 @@ func writeUint64(w io.Writer, n uint64) uint64 {
 	} else if n < (1<<56)-1 {
 		if w != nil {
 
-			w.Write([]byte{
+			_, _ = w.Write([]byte{
 				byte((n>>49)&0x7f | 0x80),
 				byte((n>>42)&0x7f | 0x80),
 				byte((n>>35)&0x7f | 0x80),
@@ -174,7 +175,7 @@ func writeUint64(w io.Writer, n uint64) uint64 {
 	} else if n < (1<<63)-1 {
 		if w != nil {
 
-			w.Write([]byte{
+			_, _ = w.Write([]byte{
 				byte((n>>56)&0x7f | 0x80),
 				byte((n>>49)&0x7f | 0x80),
 				byte((n>>42)&0x7f | 0x80),
@@ -190,7 +191,7 @@ func writeUint64(w io.Writer, n uint64) uint64 {
 
 	}
 	if w != nil {
-		w.Write([]byte{
+		_, _ = w.Write([]byte{
 			byte((n>>63)&0x7f | 0x80),
 			byte((n>>56)&0x7f | 0x80),
 			byte((n>>49)&0x7f | 0x80),
@@ -225,7 +226,7 @@ func writeString(w io.Writer, v string) uint64 {
 	l := uint64(len(v))
 	l += writeUint64(w, l)
 	if w != nil {
-		w.Write([]byte(v))
+		_, _ = w.Write([]byte(v))
 	}
 	return l
 }

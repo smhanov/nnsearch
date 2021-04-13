@@ -104,3 +104,28 @@ func ComputeAverageDistance(space MetricSpace, samples int) float64 {
 
 	return sum / float64(n)
 }
+
+func ComputeDistances(space MetricSpace, pt Point) []float64 {
+	ret := make([]float64, space.Length())
+	for i := 0; i < space.Length(); i++ {
+		ret[i] = space.Distance(pt, space.At(i))
+	}
+	return ret
+}
+
+type subspace struct {
+	MetricSpace
+	k int
+}
+
+// NewSubspace
+func NewSubspace(space MetricSpace, k int) MetricSpace {
+	if k > space.Length() {
+		k = space.Length()
+	}
+	return subspace{space, k}
+}
+
+func (ss subspace) Length() int {
+	return ss.k
+}

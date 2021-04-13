@@ -52,6 +52,7 @@ func ones(count int) []float64 {
 	return ret
 }
 
+/*
 func printmatrix(words1, words2 []string, mat [][]float64) {
 	log.Printf("%v %v mat=%v", len(words1), len(words2), mat)
 	for i := range words1 {
@@ -60,6 +61,7 @@ func printmatrix(words1, words2 []string, mat [][]float64) {
 		}
 	}
 }
+*/
 
 func (wc *WmdCalc) Compute(words1, words2 []string) float64 {
 	if len(words1) == 0 || len(words2) == 0 {

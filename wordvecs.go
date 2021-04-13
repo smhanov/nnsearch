@@ -105,32 +105,6 @@ func (wv *WordVecs) Get(word string) []float32 {
 	return result
 }
 
-func EuclideanDistance(vec1 []float32, vec2 []float32) float64 {
-	var sum float64
-	for i := range vec1 {
-		sum += float64((vec1[i] - vec2[i]) * (vec1[i] - vec2[i]))
-	}
-	return math.Sqrt(sum)
-}
-
-func CosineDistance(vec1 []float32, vec2 []float32) float64 {
-
-	var len1, len2, dot float64
-	for i := range vec1 {
-		len1 += float64(vec1[i] * vec1[i])
-		len2 += float64(vec2[i] * vec2[i])
-		dot += float64(vec1[i] * vec2[i])
-	}
-
-	numer := dot / (math.Sqrt(len1) * math.Sqrt(len2))
-	if numer > 1.0 {
-		numer = 1.0
-	} else if numer < -1.0 {
-		numer = -1.0
-	}
-	return math.Acos(numer) / math.Pi
-}
-
 // Distance ...
 func (wv *WordVecs) WordDistance(word1 string, word2 string) float64 {
 	vec1 := wv.Get(word1)
