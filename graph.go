@@ -363,8 +363,8 @@ func (g *graph) GetNode(index int) Point {
 	return g.space.At(index)
 }
 
-func (g *graph) NearestNeighbours(target Point, k int) []PointDistance {
-	return NearestNeighbours(g, target, k)
+func (g *graph) NearestNeighbours(target Point, k int, filter PointFilter) []PointDistance {
+	return NearestNeighbours(g, target, k, filter)
 }
 
 func (g *graph) Space() MetricSpace {
@@ -467,8 +467,8 @@ func (e *edgeHeap) Decode(r ByteInputStream) {
 	}
 }
 
-func (g *frozenGraph) NearestNeighbours(target Point, k int) []PointDistance {
-	return NearestNeighbours(g, target, k)
+func (g *frozenGraph) NearestNeighbours(target Point, k int, filter PointFilter) []PointDistance {
+	return NearestNeighbours(g, target, k, filter)
 }
 
 func (g *frozenGraph) GetNode(index int) Point {
@@ -500,78 +500,25 @@ func randomSample(n, k int) []int {
 	return results
 }
 
-func NearestNeighbours(g IGraph, target Point, k int) []PointDistance {
+func NearestNeighbours(g IGraph, target Point, k int, filter PointFilter) []PointDistance {
 	space := g.Space()
-	if false {
-		// maintain a heap of the nearest neighbours and a queue of nodes to check.
-		var bestSoFar pointHeap
-		var worklist []int
-		have := make(map[int]bool)
-
-		// things only go onto the heap if they are less distance than the worst
-		// when things go onto the heap, they also are added to the queue.
-
-		// find about 100 random neighbours and add to heap (and queue)
-		worklist = randomSample(g.GetNodeCount(), 100)
-		for _, index := range worklist {
-			pt := space.At(index)
-			have[index] = true
-			heap.Push(&bestSoFar, PointDistance{
-				Index:    index,
-				Point:    pt,
-				Distance: space.Distance(pt, target),
-			})
-		}
-
-		// while there are items in the queue,
-		for len(worklist) > 0 {
-			// take item off the queue
-			l := len(worklist)
-			index := worklist[l-1]
-			worklist = worklist[:l-1]
-
-			// check each of its neighbours.
-			for _, edge := range g.GetNeighbours(index) {
-				if have[edge.index] {
-					continue
-				}
-				have[edge.index] = true
-
-				// if neighbour needs to go onto the heap, then add it
-				d := space.Distance(target, space.At(edge.index))
-				if d < bestSoFar[0].Distance {
-					heap.Pop(&bestSoFar)
-					heap.Push(&bestSoFar, PointDistance{
-						Distance: d,
-						Index:    edge.index,
-						Point:    space.At(edge.index),
-					})
-					worklist = append(worklist, edge.index)
-				}
-			}
-		}
-		sort.Slice(bestSoFar, func(a, b int) bool {
-			return bestSoFar[a].Distance < bestSoFar[b].Distance
-		})
-
-		log.Printf("Searched %v%% of graph",
-			float64(len(have))/float64(g.GetNodeCount()))
-		return bestSoFar[:k]
-	}
-
 	var bestk pointHeap
 	var queue minEdgeHeap
 	epsilon := 1.1
 	checked := make(map[int]bool)
 	n := space.Length()
 
-	consider := func(u int) {
+	consider := func(u int) bool {
 		if checked[u] {
-			return
+			return false
 		}
 
 		checked[u] = true
 		pt := space.At(u)
+		if !filter(pt) {
+			return false
+		}
+
 		d := space.Distance(pt, target)
 		if len(bestk) < k || d < bestk[0].Distance {
 			if len(bestk) == k {
@@ -587,10 +534,14 @@ func NearestNeighbours(g IGraph, target Point, k int) []PointDistance {
 		if d < epsilon*bestk[0].Distance {
 			heap.Push(&queue, edge{u, d, false})
 		}
+		return true
 	}
 
-	for i := 0; i < 10; i++ {
-		consider(rand.Intn(n))
+	found := 0
+	for found < 10 {
+		if consider(rand.Intn(n)) {
+			found++
+		}
 	}
 
 	for {
@@ -610,7 +561,7 @@ func NearestNeighbours(g IGraph, target Point, k int) []PointDistance {
 
 	log.Printf("Searched %v%% of graph",
 		float64(len(checked))/float64(g.GetNodeCount()))
-	return bestk[:k]
+	return bestk
 }
 
 /*

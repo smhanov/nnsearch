@@ -42,6 +42,9 @@ func ChoosePivots(space MetricSpace, k int) []Pivot {
 	// find two more points farthest from it
 	for j := 0; j < 2; j++ {
 		pt = ArgmaxFn(space.Length(), func(i int) float64 {
+			if math.IsInf(pivots[j].Distances[i], 1) {
+				return -1
+			}
 			return pivots[j].Distances[i]
 		})
 

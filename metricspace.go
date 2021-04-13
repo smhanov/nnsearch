@@ -23,8 +23,14 @@ type PointDistance struct {
 	Distance float64
 }
 
+type PointFilter = func(pt Point) bool
+
+func AllowAll(pt Point) bool {
+	return true
+}
+
 type SpaceIndex interface {
-	NearestNeighbours(target Point, k int) []PointDistance
+	NearestNeighbours(target Point, k int, fn PointFilter) []PointDistance
 	Write(w io.Writer) (int64, error)
 }
 
@@ -59,13 +65,17 @@ func (bf *bruteForceIndex) Write(w io.Writer) (int64, error) {
 	return 0, nil
 }
 
-func (bf *bruteForceIndex) NearestNeighbours(target Point, k int) []PointDistance {
+func (bf *bruteForceIndex) NearestNeighbours(target Point, k int, filter PointFilter) []PointDistance {
 	results := make(pointHeap, 0, k)
 	counter := NewCounter(100)
 	var mutex sync.Mutex
 
 	ForkLoop(bf.space.Length(), func(i int) {
 		pt := bf.space.At(i)
+		if !filter(pt) {
+			return
+		}
+
 		dist := bf.space.Distance(target, pt)
 		mutex.Lock()
 		if len(results) < k || results[0].Distance > dist {
