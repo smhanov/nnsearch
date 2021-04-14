@@ -515,12 +515,9 @@ func NearestNeighbours(g IGraph, target Point, k int, filter PointFilter) []Poin
 
 		checked[u] = true
 		pt := space.At(u)
-		if !filter(pt) {
-			return false
-		}
 
 		d := space.Distance(pt, target)
-		if len(bestk) < k || d < bestk[0].Distance {
+		if (len(bestk) < k || d < bestk[0].Distance) && filter(pt) {
 			if len(bestk) == k {
 				heap.Pop(&bestk)
 			}
@@ -531,7 +528,7 @@ func NearestNeighbours(g IGraph, target Point, k int, filter PointFilter) []Poin
 			})
 		}
 
-		if d < epsilon*bestk[0].Distance {
+		if len(bestk) == 0 || d < epsilon*bestk[0].Distance {
 			heap.Push(&queue, edge{u, d, false})
 		}
 		return true
