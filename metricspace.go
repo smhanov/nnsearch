@@ -67,7 +67,6 @@ func (bf *bruteForceIndex) Write(w io.Writer) (int64, error) {
 
 func (bf *bruteForceIndex) NearestNeighbours(target Point, k int, filter PointFilter) []PointDistance {
 	results := make(pointHeap, 0, k)
-	counter := NewCounter(100)
 	var mutex sync.Mutex
 
 	ForkLoop(bf.space.Length(), func(i int) {
@@ -88,7 +87,6 @@ func (bf *bruteForceIndex) NearestNeighbours(target Point, k int, filter PointFi
 				Distance: dist,
 			})
 		}
-		counter.Count()
 		mutex.Unlock()
 	})
 
