@@ -556,8 +556,8 @@ func NearestNeighbours(g IGraph, target Point, k int, filter PointFilter) []Poin
 		return bestk[a].Distance < bestk[b].Distance
 	})
 
-	log.Printf("Searched %v%% of graph",
-		float64(len(checked))/float64(g.GetNodeCount()))
+	log.Printf("Searched %.1f%% of graph",
+		float64(len(checked))/float64(g.GetNodeCount())*100)
 	return bestk
 }
 
