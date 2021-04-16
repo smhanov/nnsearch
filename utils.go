@@ -111,6 +111,24 @@ func ForkLoop(n int, fn func(i int)) {
 	wg.Wait()
 }
 
+func ForkWhile(fn func() bool) {
+	threads := runtime.NumCPU()
+	var wg sync.WaitGroup
+
+	worker := func() {
+		for fn() {
+		}
+		wg.Done()
+	}
+
+	for i := 0; i < threads; i++ {
+		wg.Add(1)
+		go worker()
+	}
+
+	wg.Wait()
+}
+
 func ShuffledForkLoop(n int, fn func(i int)) {
 	order := Sequence(n)
 	rand.Shuffle(n, func(i, j int) {

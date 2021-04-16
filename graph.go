@@ -508,15 +508,24 @@ func NearestNeighbours(g IGraph, target Point, k int, filter PointFilter) []Poin
 	checked := make(map[int]bool)
 	n := space.Length()
 
+	var mutex sync.Mutex
+	gthreshold := math.Inf(1)
+
 	consider := func(u int) bool {
+		mutex.Lock()
 		if checked[u] {
+			mutex.Unlock()
 			return false
 		}
 
 		checked[u] = true
-		pt := space.At(u)
+		mutex.Unlock()
 
+		pt := space.At(u)
 		d := space.Distance(pt, target)
+
+		mutex.Lock()
+		defer mutex.Unlock()
 		if (len(bestk) < k || d < bestk[0].Distance) && filter(pt) {
 			if len(bestk) == k {
 				heap.Pop(&bestk)
@@ -526,11 +535,10 @@ func NearestNeighbours(g IGraph, target Point, k int, filter PointFilter) []Poin
 				Index:    u,
 				Point:    pt,
 			})
+			gthreshold = epsilon * d
 		}
 
-		if len(bestk) == 0 || d < epsilon*bestk[0].Distance {
-			heap.Push(&queue, edge{u, d, false})
-		}
+		heap.Push(&queue, edge{u, d, false})
 		return true
 	}
 
@@ -541,19 +549,33 @@ func NearestNeighbours(g IGraph, target Point, k int, filter PointFilter) []Poin
 		}
 	}
 
-	for {
+	ForkWhile(func() bool {
+		mutex.Lock()
 		if len(queue) == 0 {
-			break
+			mutex.Unlock()
+			return false
 		}
 
 		item := heap.Pop(&queue).(edge)
+		if len(bestk) == k && item.distance > gthreshold {
+			mutex.Unlock()
+			return false
+		}
+		mutex.Unlock()
+		log.Printf("Examine %s", item.index)
 		for _, e := range g.GetNeighbours(item.index) {
 			consider(e.index)
 		}
-	}
+		return true
+	})
 
 	sort.Slice(bestk, func(a, b int) bool {
-		return bestk[a].Distance < bestk[b].Distance
+		if bestk[a].Distance < bestk[b].Distance {
+			return true
+		} else if bestk[a].Distance > bestk[b].Distance {
+			return false
+		}
+		return bestk[a].Index > bestk[b].Index
 	})
 
 	log.Printf("Searched %.1f%% of graph",
