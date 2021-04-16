@@ -363,8 +363,8 @@ func (g *graph) GetNode(index int) Point {
 	return g.space.At(index)
 }
 
-func (g *graph) NearestNeighbours(target Point, k int, filter PointFilter) []PointDistance {
-	return NearestNeighbours(g, target, k, filter)
+func (g *graph) NearestNeighbours(target Point, k int, options *SearchOptions) []PointDistance {
+	return NearestNeighbours(g, target, k, options)
 }
 
 func (g *graph) Space() MetricSpace {
@@ -467,8 +467,8 @@ func (e *edgeHeap) Decode(r ByteInputStream) {
 	}
 }
 
-func (g *frozenGraph) NearestNeighbours(target Point, k int, filter PointFilter) []PointDistance {
-	return NearestNeighbours(g, target, k, filter)
+func (g *frozenGraph) NearestNeighbours(target Point, k int, options *SearchOptions) []PointDistance {
+	return NearestNeighbours(g, target, k, options)
 }
 
 func (g *frozenGraph) GetNode(index int) Point {
@@ -502,7 +502,8 @@ func randomSample(n, k int) []int {
 }
 */
 
-func NearestNeighbours(g IGraph, target Point, k int, filter PointFilter) []PointDistance {
+func NearestNeighbours(g IGraph, target Point, k int, optionsIn *SearchOptions) []PointDistance {
+	opt := getOptions(optionsIn)
 	space := g.Space()
 	var bestk pointHeap
 	var queue minEdgeHeap
@@ -528,7 +529,7 @@ func NearestNeighbours(g IGraph, target Point, k int, filter PointFilter) []Poin
 
 		mutex.Lock()
 		defer mutex.Unlock()
-		if (len(bestk) < k || d < bestk[0].Distance) && filter(pt) {
+		if (len(bestk) < k || d < bestk[0].Distance) && opt.Filter(pt) {
 			if len(bestk) == k {
 				heap.Pop(&bestk)
 			}
@@ -552,6 +553,9 @@ func NearestNeighbours(g IGraph, target Point, k int, filter PointFilter) []Poin
 	}
 
 	ForkWhile(func() bool {
+		if opt.Ctx.Err() != nil {
+			return false
+		}
 		mutex.Lock()
 		if len(queue) == 0 {
 			mutex.Unlock()

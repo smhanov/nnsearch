@@ -2,6 +2,7 @@ package nnsearch
 
 import (
 	"container/heap"
+	"context"
 	"io"
 	"math/rand"
 	"sort"
@@ -29,8 +30,34 @@ func AllowAll(pt Point) bool {
 	return true
 }
 
+// Options for nearest neighbour searching. All options are optional.
+type SearchOptions struct {
+	// A context that can abort the search.
+	Ctx context.Context
+
+	// A method that returns true if a point is admissible.
+	Filter PointFilter
+}
+
+func getOptions(in *SearchOptions) *SearchOptions {
+	var out SearchOptions
+	if in != nil {
+		out = *in
+	}
+
+	if out.Ctx == nil {
+		out.Ctx = context.Background()
+	}
+
+	if out.Filter == nil {
+		out.Filter = AllowAll
+	}
+
+	return &out
+}
+
 type SpaceIndex interface {
-	NearestNeighbours(target Point, k int, fn PointFilter) []PointDistance
+	NearestNeighbours(target Point, k int, options *SearchOptions) []PointDistance
 	Write(w io.Writer) (int64, error)
 }
 
@@ -65,13 +92,18 @@ func (bf *bruteForceIndex) Write(w io.Writer) (int64, error) {
 	return 0, nil
 }
 
-func (bf *bruteForceIndex) NearestNeighbours(target Point, k int, filter PointFilter) []PointDistance {
+func (bf *bruteForceIndex) NearestNeighbours(target Point, k int, options *SearchOptions) []PointDistance {
+	opt := getOptions(options)
 	results := make(pointHeap, 0, k)
 	var mutex sync.Mutex
 
 	ForkLoop(bf.space.Length(), func(i int) {
+		if opt.Ctx.Err() != nil {
+			return
+		}
+
 		pt := bf.space.At(i)
-		if !filter(pt) {
+		if !opt.Filter(pt) {
 			return
 		}
 
