@@ -486,6 +486,7 @@ type IGraph interface {
 	GetNode(index int) Point
 }
 
+/*
 func randomSample(n, k int) []int {
 	have := make(map[int]bool)
 	var results []int
@@ -499,6 +500,7 @@ func randomSample(n, k int) []int {
 	}
 	return results
 }
+*/
 
 func NearestNeighbours(g IGraph, target Point, k int, filter PointFilter) []PointDistance {
 	space := g.Space()
@@ -562,7 +564,6 @@ func NearestNeighbours(g IGraph, target Point, k int, filter PointFilter) []Poin
 			return false
 		}
 		mutex.Unlock()
-		log.Printf("Examine %s", item.index)
 		for _, e := range g.GetNeighbours(item.index) {
 			consider(e.index)
 		}

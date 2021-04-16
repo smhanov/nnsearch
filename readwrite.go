@@ -31,6 +31,14 @@ func (bs *byteInputStream) NextByte() byte {
 	return ret
 }
 
+func (bs *byteInputStream) Read(p []byte) (n int, err error) {
+	for i := 0; i < len(p); i++ {
+		p[i] = bs.At(bs.pos)
+		bs.pos++
+	}
+	return len(p), nil
+}
+
 func WriteThing(w io.Writer, thing interface{}) uint64 {
 	switch v := thing.(type) {
 	case uint64:
