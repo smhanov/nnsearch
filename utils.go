@@ -111,6 +111,30 @@ func ForkLoop(n int, fn func(i int)) {
 	wg.Wait()
 }
 
+func BatchedForkLoop(n, batchSize int, fn func(start, end int)) {
+	threads := runtime.NumCPU()
+	var wg sync.WaitGroup
+
+	worker := func(offset int) {
+		for i := offset; i < n/batchSize; i += threads {
+			start := i * batchSize
+			end := start + batchSize
+			if end > n {
+				end = n
+			}
+			fn(start, end)
+		}
+		wg.Done()
+	}
+
+	for i := 0; i < threads; i++ {
+		wg.Add(1)
+		go worker(i)
+	}
+
+	wg.Wait()
+}
+
 func ForkWhile(fn func() bool) {
 	threads := runtime.NumCPU()
 	var wg sync.WaitGroup
