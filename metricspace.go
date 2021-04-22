@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"context"
 	"io"
+	"log"
 	"math/rand"
 	"sort"
 	"sync"
@@ -57,8 +58,58 @@ func getOptions(in *SearchOptions) *SearchOptions {
 }
 
 type SpaceIndex interface {
+	MetricSpace
 	NearestNeighbours(target Point, k int, options *SearchOptions) []PointDistance
 	Write(w io.Writer) (int64, error)
+}
+
+/**
+Searches multiple indices for nearest neighbours in parallel, and combines the results.
+*/
+func SearchAll(target Point, k int, options *SearchOptions, indices ...SpaceIndex) []PointDistance {
+	all := make([][]PointDistance, len(indices))
+	l := 0
+	ForkLoop(len(indices), func(i int) {
+		all[i] = indices[i].NearestNeighbours(target, k, options)
+		l += len(all[i])
+	})
+
+	results := make([]PointDistance, 0, l)
+	for _, list := range all {
+		results = append(results, list...)
+	}
+
+	sort.Slice(results, func(a, b int) bool {
+		return results[a].Distance < results[b].Distance
+	})
+
+	if len(results) > k {
+		results = results[:k]
+	}
+
+	return results
+}
+
+func Merge(n1, n2 int, less func(i, j int) bool, use func(which, i int)) {
+	i := 0
+	j := 0
+	for {
+		if i == n1 && j == n2 {
+			break
+		} else if i == n1 {
+			use(1, j)
+			j++
+		} else if j == n2 {
+			use(0, i)
+			i++
+		} else if less(i, j) {
+			use(0, i)
+			i++
+		} else {
+			use(1, j)
+			j++
+		}
+	}
 }
 
 type pointHeap []PointDistance
@@ -81,7 +132,7 @@ func (h *pointHeap) Pop() interface{} {
 
 /** Brute force index */
 type bruteForceIndex struct {
-	space MetricSpace
+	MetricSpace
 }
 
 func NewBruteForceIndex(space MetricSpace) SpaceIndex {
@@ -97,17 +148,17 @@ func (bf *bruteForceIndex) NearestNeighbours(target Point, k int, options *Searc
 	results := make(pointHeap, 0, k)
 	var mutex sync.Mutex
 
-	ForkLoop(bf.space.Length(), func(i int) {
+	ForkLoop(bf.Length(), func(i int) {
 		if opt.Ctx.Err() != nil {
 			return
 		}
 
-		pt := bf.space.At(i)
+		pt := bf.At(i)
 		if !opt.Filter(pt) {
 			return
 		}
 
-		dist := bf.space.Distance(target, pt)
+		dist := bf.Distance(target, pt)
 		mutex.Lock()
 		if len(results) < k || results[0].Distance > dist {
 			if len(results) == k {
@@ -155,17 +206,24 @@ func ComputeDistances(space MetricSpace, pt Point) []float64 {
 
 type subspace struct {
 	MetricSpace
-	k int
+	start, length int
 }
 
 // NewSubspace
-func NewSubspace(space MetricSpace, k int) MetricSpace {
-	if k > space.Length() {
-		k = space.Length()
+func NewSubspace(space MetricSpace, start, length int) MetricSpace {
+	if start > space.Length() {
+		start = space.Length()
 	}
-	return subspace{space, k}
+	if start+length > space.Length() {
+		length = space.Length() - start
+	}
+	return subspace{space, start, length}
 }
 
 func (ss subspace) Length() int {
-	return ss.k
+	return ss.length
+}
+
+func (ss subspace) At(index int) Point {
+	return ss.MetricSpace.At(index - ss.start)
 }

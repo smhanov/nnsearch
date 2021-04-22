@@ -53,10 +53,18 @@ func (ff *FrozenFile) GetItem(index int, item FrozenItem) {
 	item.Decode(bs)
 }
 
-func OpenFrozenFile(filename string) *FrozenFile {
+func (ff *FrozenFile) Close() error {
+	if c, ok := ff.r.(io.Closer); ok {
+		return c.Close()
+	}
+
+	return nil
+}
+
+func OpenFrozenFile(filename string) (*FrozenFile, error) {
 	file, err := mmap.Open(filename)
 	if err != nil {
-		log.Panic(err)
+		return nil, err
 	}
 
 	bs := newByteInputStream(file, 0)
@@ -67,5 +75,5 @@ func OpenFrozenFile(filename string) *FrozenFile {
 		offset: off,
 		r:      file,
 		count:  int64(count),
-	}
+	}, nil
 }

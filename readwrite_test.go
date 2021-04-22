@@ -58,7 +58,7 @@ func TestReadWrite(t *testing.T) {
 	b.Flush()
 	f.Close()
 
-	ff := OpenFrozenFile("freezetest.dat")
+	ff, _ := OpenFrozenFile("freezetest.dat")
 
 	if ff.GetCount() != 2 {
 		log.Panicf("getCount returned %v", ff.GetCount())

@@ -15,7 +15,7 @@ import (
 )
 
 type graph struct {
-	space   MetricSpace
+	MetricSpace
 	heaps   []edgeHeap
 	checked map[pair]bool
 	lock    sync.RWMutex
@@ -66,11 +66,11 @@ func (h *minEdgeHeap) Pop() interface{} {
 
 func NewGraphIndex(space MetricSpace) *graph {
 	g := &graph{
-		checked: make(map[pair]bool),
-		space:   space,
+		MetricSpace: space,
+		checked:     make(map[pair]bool),
 	}
 
-	n := g.space.Length()
+	n := g.Length()
 	g.heaps = make([]edgeHeap, n)
 	g.locks = make([]sync.Mutex, n)
 
@@ -80,20 +80,20 @@ func NewGraphIndex(space MetricSpace) *graph {
 
 //lint:ignore U1000 .
 func (g *graph) dump(k int) {
-	n := g.space.Length()
+	n := g.Length()
 	for i := 0; i < n; i++ {
 		sort.Sort(sort.Reverse(g.heaps[i]))
 		for j := 0; j < k; j++ {
 			edge := g.heaps[i][j]
-			fmt.Printf("%v %v %v\n", g.space.At(i), g.space.At(edge.index), edge.distance)
+			fmt.Printf("%v %v %v\n", g.At(i), g.At(edge.index), edge.distance)
 		}
 	}
 }
 
 func (g *graph) randomize(k int) {
 	c := NewCounter(1000)
-	n := g.space.Length()
-	ForkLoop(g.space.Length(), func(u int) {
+	n := g.Length()
+	ForkLoop(g.Length(), func(u int) {
 		c.Count()
 		var v int
 		for x := 0; x < k; x++ {
@@ -109,7 +109,7 @@ func (g *graph) randomize(k int) {
 }
 
 func (g *graph) initializeUsingPivots(pivots []Pivot, k int) {
-	n := g.space.Length()
+	n := g.Length()
 	if n < 1 {
 		return
 	}
@@ -178,7 +178,7 @@ func (g *graph) connect(a, b, k int) int {
 	g.lock.RUnlock()
 
 	c := 0
-	l := g.space.Distance(g.space.At(a), g.space.At(b))
+	l := g.Distance(g.At(a), g.At(b))
 
 	g.locks[a].Lock()
 	if g.heaps[a].Len() < k {
@@ -221,7 +221,7 @@ func (g *graph) descentStep(k int, maxSample int, iter int) int {
 	g.checked = make(map[pair]bool)
 
 	// find reverse graph
-	n := g.space.Length()
+	n := g.Length()
 	rev := make([][]edge, n)
 
 	for u := 0; u < n; u++ {
@@ -292,10 +292,10 @@ func (g *graph) descentStep(k int, maxSample int, iter int) int {
 }
 
 func (g *graph) gradientDescentKnn(kIn int) {
-	n := g.space.Length()
+	n := g.Length()
 	np := int(math.Max(math.Log2(float64(n)), 3))
 	log.Printf("Choosing %d pivots", np)
-	pivots := ChoosePivots(g.space, np)
+	pivots := ChoosePivots(g, np)
 
 	k := 50
 	log.Printf("Initialize using pivots")
@@ -352,7 +352,7 @@ func (g *graph) gradientDescentKnn(kIn int) {
 }
 
 func (g *graph) GetNodeCount() int {
-	return g.space.Length()
+	return g.Length()
 }
 
 func (g *graph) GetNeighbours(index int) []edge {
@@ -360,15 +360,11 @@ func (g *graph) GetNeighbours(index int) []edge {
 }
 
 func (g *graph) GetNode(index int) Point {
-	return g.space.At(index)
+	return g.At(index)
 }
 
 func (g *graph) NearestNeighbours(target Point, k int, options *SearchOptions) []PointDistance {
 	return NearestNeighbours(g, target, k, options)
-}
-
-func (g *graph) Space() MetricSpace {
-	return g.space
 }
 
 /*
@@ -391,7 +387,7 @@ func pushk(h heap.Interface, x interface{}, k int) {
 func (g *graph) makeUndirected(k int) {
 	have := make(map[pair]bool)
 	// check what edges we have already
-	n := g.space.Length()
+	n := g.Length()
 	redges := make([]edgeHeap, n)
 
 	// create heaps to contain the reverse edges
@@ -430,12 +426,8 @@ func (g *graph) makeUndirected(k int) {
 }
 
 type frozenGraph struct {
-	ff    *FrozenFile
-	space MetricSpace
-}
-
-func (g *frozenGraph) Space() MetricSpace {
-	return g.space
+	MetricSpace
+	ff *FrozenFile
 }
 
 func (g *frozenGraph) GetNodeCount() int {
@@ -472,7 +464,7 @@ func (g *frozenGraph) NearestNeighbours(target Point, k int, options *SearchOpti
 }
 
 func (g *frozenGraph) GetNode(index int) Point {
-	return g.space.At(index)
+	return g.At(index)
 }
 
 func (g *frozenGraph) Write(w io.Writer) (int64, error) {
@@ -480,7 +472,7 @@ func (g *frozenGraph) Write(w io.Writer) (int64, error) {
 }
 
 type IGraph interface {
-	Space() MetricSpace
+	MetricSpace
 	GetNodeCount() int
 	GetNeighbours(index int) []edge
 	GetNode(index int) Point
@@ -504,7 +496,7 @@ func randomSample(n, k int) []int {
 
 func NearestNeighbours(g IGraph, target Point, k int, optionsIn *SearchOptions) []PointDistance {
 	opt := getOptions(optionsIn)
-	space := g.Space()
+	space := g
 	var bestk pointHeap
 	var queue minEdgeHeap
 	epsilon := 1.1
@@ -639,9 +631,13 @@ func (g *graph) Save(filename string) {
 	}
 }
 
-func LoadGraphIndex(filename string, space MetricSpace) SpaceIndex {
-	return &frozenGraph{
-		ff:    OpenFrozenFile(filename),
-		space: space,
+func LoadGraphIndex(filename string, space MetricSpace) (SpaceIndex, error) {
+	ff, err := OpenFrozenFile(filename)
+	if err != nil {
+		return nil, err
 	}
+	return &frozenGraph{
+		MetricSpace: space,
+		ff:          ff,
+	}, nil
 }
