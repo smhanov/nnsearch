@@ -4,7 +4,6 @@ import (
 	"container/heap"
 	"context"
 	"io"
-	"log"
 	"math/rand"
 	"sort"
 	"sync"
