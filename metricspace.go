@@ -226,3 +226,25 @@ func (ss subspace) Length() int {
 func (ss subspace) At(index int) Point {
 	return ss.MetricSpace.At(index - ss.start)
 }
+
+type shuffledSpace struct {
+	MetricSpace
+	mapping []int
+}
+
+func NewShuffledSpace(space MetricSpace) MetricSpace {
+	ss := &shuffledSpace{
+		MetricSpace: space,
+		mapping:     Sequence(space.Length()),
+	}
+
+	rand.Shuffle(space.Length(), func(i, j int) {
+		ss.mapping[i], ss.mapping[j] = ss.mapping[j], ss.mapping[i]
+	})
+
+	return ss
+}
+
+func (ss *shuffledSpace) At(index int) Point {
+	return ss.MetricSpace.At(ss.mapping[index])
+}

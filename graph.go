@@ -16,10 +16,10 @@ import (
 
 type graph struct {
 	MetricSpace
-	heaps   []edgeHeap
-	checked map[pair]bool
+	Heaps   []edgeHeap
+	Checked map[pair]bool
 	lock    sync.RWMutex
-	locks   []sync.Mutex
+	Locks   []sync.Mutex
 }
 
 type edge struct {
@@ -67,12 +67,12 @@ func (h *minEdgeHeap) Pop() interface{} {
 func NewGraphIndex(space MetricSpace) *graph {
 	g := &graph{
 		MetricSpace: space,
-		checked:     make(map[pair]bool),
+		Checked:     make(map[pair]bool),
 	}
 
 	n := g.Length()
-	g.heaps = make([]edgeHeap, n)
-	g.locks = make([]sync.Mutex, n)
+	g.Heaps = make([]edgeHeap, n)
+	g.Locks = make([]sync.Mutex, n)
 
 	g.gradientDescentKnn(50)
 	return g
@@ -82,9 +82,9 @@ func NewGraphIndex(space MetricSpace) *graph {
 func (g *graph) dump(k int) {
 	n := g.Length()
 	for i := 0; i < n; i++ {
-		sort.Sort(sort.Reverse(g.heaps[i]))
+		sort.Sort(sort.Reverse(g.Heaps[i]))
 		for j := 0; j < k; j++ {
-			edge := g.heaps[i][j]
+			edge := g.Heaps[i][j]
 			fmt.Printf("%v %v %v\n", g.At(i), g.At(edge.index), edge.distance)
 		}
 	}
@@ -108,7 +108,7 @@ func (g *graph) randomize(k int) {
 	})
 }
 
-func (g *graph) initializeUsingPivots(pivots []Pivot, k int) {
+func (g *graph) initializeUsingPivots(pivots Pivots, k int) {
 	n := g.Length()
 	if n < 1 {
 		return
@@ -120,7 +120,7 @@ func (g *graph) initializeUsingPivots(pivots []Pivot, k int) {
 
 	hashes := make([][]int, n)
 	for u := 0; u < n; u++ {
-		hashes[u] = PivotHash(pivots, u)
+		hashes[u] = pivots.Hash(u)
 	}
 
 	order := Sequence(n)
@@ -171,7 +171,7 @@ func (g *graph) bruteForce(k int) {
 
 func (g *graph) connect(a, b, k int) int {
 	g.lock.RLock()
-	if g.checked[pair{a, b}] || g.checked[pair{b, a}] || a == b {
+	if g.Checked[pair{a, b}] || g.Checked[pair{b, a}] || a == b {
 		g.lock.RUnlock()
 		return 0
 	}
@@ -180,36 +180,36 @@ func (g *graph) connect(a, b, k int) int {
 	c := 0
 	l := g.Distance(g.At(a), g.At(b))
 
-	g.locks[a].Lock()
-	if g.heaps[a].Len() < k {
-		heap.Push(&g.heaps[a], edge{b, l, true})
+	g.Locks[a].Lock()
+	if g.Heaps[a].Len() < k {
+		heap.Push(&g.Heaps[a], edge{b, l, true})
 		c++
-	} else if l < g.heaps[a][0].distance {
-		heap.Pop(&g.heaps[a])
-		heap.Push(&g.heaps[a], edge{b, l, true})
-		c++
-	}
-
-	g.locks[a].Unlock()
-	g.locks[b].Lock()
-
-	if g.heaps[b].Len() < k {
-		heap.Push(&g.heaps[b], edge{a, l, true})
-		c++
-	} else if l < g.heaps[b][0].distance {
-		heap.Pop(&g.heaps[b])
-		heap.Push(&g.heaps[b], edge{a, l, true})
+	} else if l < g.Heaps[a][0].distance {
+		heap.Pop(&g.Heaps[a])
+		heap.Push(&g.Heaps[a], edge{b, l, true})
 		c++
 	}
 
-	g.locks[b].Unlock()
+	g.Locks[a].Unlock()
+	g.Locks[b].Lock()
+
+	if g.Heaps[b].Len() < k {
+		heap.Push(&g.Heaps[b], edge{a, l, true})
+		c++
+	} else if l < g.Heaps[b][0].distance {
+		heap.Pop(&g.Heaps[b])
+		heap.Push(&g.Heaps[b], edge{a, l, true})
+		c++
+	}
+
+	g.Locks[b].Unlock()
 
 	if c != 0 {
 		g.lock.Lock()
-		if len(g.checked) >= 1000000 {
-			g.checked = make(map[pair]bool)
+		if len(g.Checked) >= 1000000 {
+			g.Checked = make(map[pair]bool)
 		}
-		g.checked[pair{a, b}] = true
+		g.Checked[pair{a, b}] = true
 		g.lock.Unlock()
 	}
 
@@ -218,16 +218,16 @@ func (g *graph) connect(a, b, k int) int {
 
 func (g *graph) descentStep(k int, maxSample int, iter int) int {
 	// keep track of checked pairs
-	g.checked = make(map[pair]bool)
+	g.Checked = make(map[pair]bool)
 
 	// find reverse graph
 	n := g.Length()
 	rev := make([][]edge, n)
 
 	for u := 0; u < n; u++ {
-		for _, e := range g.heaps[u] {
+		for _, e := range g.Heaps[u] {
 			rev[e.index] = append(rev[e.index], edge{u, e.distance, e.mark})
-			g.checked[pair{u, e.index}] = true
+			g.Checked[pair{u, e.index}] = true
 		}
 	}
 
@@ -242,10 +242,10 @@ func (g *graph) descentStep(k int, maxSample int, iter int) int {
 		var new []int
 		have := make(map[int]bool)
 
-		g.locks[u].Lock()
+		g.Locks[u].Lock()
 
-		for i := range g.heaps[u] {
-			e := &g.heaps[u][i]
+		for i := range g.Heaps[u] {
+			e := &g.Heaps[u][i]
 			if e.mark {
 				new = append(new, e.index)
 				e.mark = false
@@ -255,7 +255,7 @@ func (g *graph) descentStep(k int, maxSample int, iter int) int {
 			have[e.index] = true
 		}
 
-		g.locks[u].Unlock()
+		g.Locks[u].Unlock()
 
 		odds := float64(maxSample) / float64(len(rev[u]))
 		for _, e := range rev[u] {
@@ -295,7 +295,7 @@ func (g *graph) gradientDescentKnn(kIn int) {
 	n := g.Length()
 	np := int(math.Max(math.Log2(float64(n)), 3))
 	log.Printf("Choosing %d pivots", np)
-	pivots := ChoosePivots(g, np)
+	pivots := ChoosePivots(g)
 
 	k := 50
 	log.Printf("Initialize using pivots")
@@ -356,7 +356,7 @@ func (g *graph) GetNodeCount() int {
 }
 
 func (g *graph) GetNeighbours(index int) []edge {
-	return g.heaps[index]
+	return g.Heaps[index]
 }
 
 func (g *graph) GetNode(index int) Point {
@@ -392,14 +392,14 @@ func (g *graph) makeUndirected(k int) {
 
 	// create heaps to contain the reverse edges
 	for u := 0; u < n; u++ {
-		for _, edge := range g.heaps[u] {
+		for _, edge := range g.Heaps[u] {
 			have[pair{u, edge.index}] = true
 		}
 	}
 
 	// add all reverse edges to nodes' neighbour list, up to the limit of k.
 	for u := 0; u < n; u++ {
-		for _, e := range g.heaps[u] {
+		for _, e := range g.Heaps[u] {
 			if !have[pair{e.index, u}] {
 				have[pair{e.index, u}] = true
 			}
@@ -416,11 +416,11 @@ func (g *graph) makeUndirected(k int) {
 	// add all reverse edges to nodes' neighbour list, up to the limit of k.
 	for u := 0; u < n; u++ {
 		for _, e := range redges[u] {
-			heap.Push(&g.heaps[u], e)
+			heap.Push(&g.Heaps[u], e)
 		}
 
 		for len(redges[u]) > k {
-			heap.Pop(&g.heaps[u])
+			heap.Pop(&g.Heaps[u])
 		}
 	}
 }
@@ -608,9 +608,9 @@ func readNumber(r io.Reader, num *uint64, bits int) {
 */
 
 func (g *graph) Write(w io.Writer) (int64, error) {
-	items := make([]FrozenItem, len(g.heaps))
-	for i := range g.heaps {
-		items[i] = &g.heaps[i]
+	items := make([]FrozenItem, len(g.Heaps))
+	for i := range g.Heaps {
+		items[i] = &g.Heaps[i]
 	}
 	n := FreezeItems(w, items)
 	return int64(n), nil

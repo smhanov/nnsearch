@@ -4,6 +4,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"sync"
 )
 
 type Pivot struct {
@@ -12,7 +13,14 @@ type Pivot struct {
 	Variance  float64
 }
 
-func ChoosePivots(space MetricSpace, k int) []Pivot {
+type Pivots []Pivot
+
+func ChoosePivots(space MetricSpace) Pivots {
+	k := int(math.Max(math.Log2(float64(space.Length())), 3))
+	return ChooseKPivots(space, k)
+}
+
+func ChooseKPivots(space MetricSpace, k int) Pivots {
 	var pivots []Pivot
 	if k > space.Length() {
 		k = space.Length()
@@ -76,12 +84,33 @@ func ChoosePivots(space MetricSpace, k int) []Pivot {
 	return pivots
 }
 
-func PivotHash(pivots []Pivot, u int) []int {
+func (pivots Pivots) Hash(u int) []int {
 	result := Sequence(len(pivots))
 	sort.Slice(Sequence(len(pivots)), func(a, b int) bool {
 		return pivots[a].Distances[u] < pivots[b].Distances[u]
 	})
 	return result
+}
+
+// Returns the minumum and maximum distances that u and v can be
+// from eachother. The true distance of u/v lie in this range.
+func (pivots Pivots) ApproxDistance(u, v int) (min, max float64) {
+	min = 0
+	max = math.Inf(1)
+	for _, pivot := range pivots {
+		closest := math.Abs(pivot.Distances[u] - pivot.Distances[v])
+		farthest := pivot.Distances[u] + pivot.Distances[v]
+
+		if farthest < max {
+			max = farthest
+		}
+
+		if closest > min {
+			min = closest
+		}
+
+	}
+	return min, max
 }
 
 func PivotHashLessThan(a, b []int) bool {
@@ -96,4 +125,45 @@ func PivotHashLessThan(a, b []int) bool {
 	}
 
 	return false
+}
+
+func (pivots Pivots) RangeQueryByIndex(space MetricSpace, u int, radius float64, options *SearchOptions) []PointDistance {
+	var results []PointDistance
+
+	if len(pivots) == 0 {
+		return results
+	}
+
+	options = getOptions(options)
+
+	n := len(pivots[0].Distances)
+	var mutex sync.Mutex
+	upt := space.At(u)
+	ForkLoop(n, func(v int) {
+		if v != u {
+			min, _ := pivots.ApproxDistance(u, v)
+			if min <= radius {
+				vpt := space.At(v)
+				if !options.Filter(vpt) {
+					return
+				}
+				dist := space.Distance(upt, vpt)
+				if dist <= radius {
+					mutex.Lock()
+					defer mutex.Unlock()
+					results = append(results, PointDistance{
+						Index:    v,
+						Point:    vpt,
+						Distance: dist,
+					})
+				}
+			}
+		}
+	})
+
+	sort.Slice(results, func(a, b int) bool {
+		return results[a].Distance < results[b].Distance
+	})
+
+	return results
 }

@@ -2,6 +2,7 @@ package nnsearch
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -10,26 +11,26 @@ import (
 )
 
 type testStruct struct {
-	hello  string
-	value1 float32
-	value2 []float32
-	value3 int64
+	Hello  string
+	Value1 float32
+	Value2 []float32
+	Value3 int64
 }
 
 func (ts *testStruct) Encode(w io.Writer) uint64 {
 	var l uint64
-	l += WriteThing(w, ts.hello)
-	l += WriteThing(w, ts.value1)
-	l += WriteThing(w, ts.value2)
-	l += WriteThing(w, ts.value3)
+	l += WriteThing(w, ts.Hello)
+	l += WriteThing(w, ts.Value1)
+	l += WriteThing(w, ts.Value2)
+	l += WriteThing(w, ts.Value3)
 	return l
 }
 
 func (ts *testStruct) Decode(bs ByteInputStream) {
-	ReadThing(bs, &ts.hello)
-	ReadThing(bs, &ts.value1)
-	ReadThing(bs, &ts.value2)
-	ReadThing(bs, &ts.value3)
+	ReadThing(bs, &ts.Hello)
+	ReadThing(bs, &ts.Value1)
+	ReadThing(bs, &ts.Value2)
+	ReadThing(bs, &ts.Value3)
 }
 
 func (ts *testStruct) String() string {
@@ -40,10 +41,10 @@ func TestReadWrite(t *testing.T) {
 	t.Logf("Run read/write test")
 
 	var written1 testStruct
-	written1.hello = "hello"
-	written1.value1 = 1.5
-	written1.value2 = []float32{1.0, 2.0, 3.0}
-	written1.value3 = -3
+	written1.Hello = "hello"
+	written1.Value1 = 1.5
+	written1.Value2 = []float32{1.0, 2.0, 3.0}
+	written1.Value3 = -3
 
 	items := []FrozenItem{&written1, &written1}
 
@@ -76,4 +77,9 @@ func TestReadWrite(t *testing.T) {
 	if str != "{hello 1.5 [1 2 3] -3}" {
 		log.Panicf("Read incorrect value, got %v", str)
 	}
+
+	slice := []*testStruct{&written1, &written1}
+	var buff bytes.Buffer
+	Encode(&buff, slice)
+	log.Printf("Encoded to %v", buff.Bytes())
 }
