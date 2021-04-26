@@ -180,6 +180,10 @@ func (bf *bruteForceIndex) NearestNeighbours(target Point, k int, options *Searc
 }
 
 func ComputeAverageDistance(space MetricSpace, samples int) float64 {
+
+    if space.Length() ==  0 {
+        return 0
+    }
 	// find cutoff
 	sum := float64(0)
 	n := 0
