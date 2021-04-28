@@ -181,13 +181,13 @@ func (bf *bruteForceIndex) NearestNeighbours(target Point, k int, options *Searc
 
 func ComputeAverageDistance(space MetricSpace, samples int) float64 {
 
-    if space.Length() ==  0 {
-        return 0
-    }
+	if space.Length() == 0 {
+		return 0
+	}
 	// find cutoff
 	sum := float64(0)
 	n := 0
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < samples; i++ {
 		n1 := rand.Intn(space.Length())
 		n2 := rand.Intn(space.Length())
 		if n1 != n2 {
@@ -199,11 +199,33 @@ func ComputeAverageDistance(space MetricSpace, samples int) float64 {
 	return sum / float64(n)
 }
 
+func ComputeMedianDistance(space MetricSpace, samples int) float64 {
+
+	if space.Length() == 0 {
+		return 0
+	}
+	// find cutoff
+	s := make([]float64, 0, samples)
+	for i := 0; i < samples; i++ {
+		n1 := rand.Intn(space.Length())
+		n2 := rand.Intn(space.Length())
+		if n1 != n2 {
+			s = append(s, space.Distance(space.At(n1), space.At(n2)))
+		}
+	}
+
+	sort.Slice(s, func(i, j int) bool {
+		return s[i] < s[j]
+	})
+
+	return s[len(s)/2]
+}
+
 func ComputeDistances(space MetricSpace, pt Point) []float64 {
 	ret := make([]float64, space.Length())
-	for i := 0; i < space.Length(); i++ {
+	ForkLoop(space.Length(), func(i int) {
 		ret[i] = space.Distance(pt, space.At(i))
-	}
+	})
 	return ret
 }
 
