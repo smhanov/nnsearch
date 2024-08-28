@@ -1,4 +1,4 @@
-module hanovsolutions.com/git/nnsearch
+module github.com/smhanov/nnsearch
 
 go 1.13
 
